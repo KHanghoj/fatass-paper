@@ -15,6 +15,8 @@ MAF_FILTER = config["filter"]
 K = config["K"]
 SEED = config["seed"]
 SUBSPLIT_LST = config["subsplit"]
+SUBSPLIT_MAX = max(SUBSPLIT_LST)
+SUBSPLIT_ARG = "" if SUBSPLIT_MAX == 0 else f"--subsplit {SUBSPLIT_MAX}" 
 SAMPLES = config["samples"]
 # PC_ITERATIVE = config["iterative"]
 # MAX_MISSINGNESS = config["max_missingness"]
@@ -38,7 +40,7 @@ with open(config["chromlist"], 'r') as fh:
 
 rule all:
     input:
-        expand(res / "fatass" / "sub{subsplit}" / "allchrom.prob.npy", subsplit=SUBSPLIT_LST)
+        expand(res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.prob.npy", subsplit=SUBSPLIT_LST)
 
 rule extract_samples:
     input:
@@ -55,31 +57,56 @@ rule train:
     input:
         res / "vcf" / "{chrom}.vcf.gz"
     output:
-        res / "haplonet" / "sub{subsplit}" / "{chrom}.loglike.npy"  
-    threads: 20
+        res / "haplonet" / "{chrom}" / "temp.loglike.npy",
+    log:
+        res / "haplonet" / "{chrom}" / "temp.loglike.npy.log",  
+    threads: 10
     params:
-        out = lambda wc, output: output[0][:-4],
-        subsplit = lambda wc: "" if wc.subsplit == 0 else f"--subsplit {wc.subsplit}" 
+        out = lambda wc, output: output[0][:-12],
     shell:
         "{HAPLONET} train --vcf {input} "
-        "--out {params.out} {params.subsplit} "
-        "--threads {threads}"
+        "--out {params.out} {SUBSPLIT_ARG} "
+        "--threads {threads} > {log}"
+
+rule make_subsplits:
+    input:
+        nosplit = res / "haplonet" / "{chrom}" / f"temp.loglike.npy",  
+    output:
+        res / "haplonet_split" / "{chrom}" / "sub{subsplit}.loglike.npy"
+    run:
+        import numpy as np
+        outdir = os.path.dirname(output[0])
+        shell("mkdir -p {outdir}")
+        maxsplit = input.nosplit.replace(".loglike.npy", ".split.loglike.npy")
+        if int(wildcards.subsplit) == 0:
+            shell("cp {input.nosplit} {output[0]}")
+        elif int(wildcards.subsplit) == SUBSPLIT_MAX:
+            shell("cp {maxsplit} {output[0]}")
+        else:
+            out = np.load(maxsplit)
+            temp_start = SUBSPLIT_MAX
+            while temp_start != int(wildcards.subsplit):
+                out = out[0::2, :, :] + out[1::2, :, :]
+                temp_start -= temp_start // 2
+            np.save(output[0], out)
 
 rule concat:
     input:
-        expand(res / "haplonet" / "sub{subsplit}" / "{chrom}.loglike.npy" ,
+        expand(res / "haplonet_split" / "{chrom}" / "sub{subsplit}.loglike.npy",
             chrom = CHROMLIST, allow_missing=True)
     output:
-        res / "haplonet" / "sub{subsplit}" / "allchrom.loglike.npy" 
+        protected(res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy") 
+    log:
+        res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy.log" 
     shell:
-         "{P} ./scripts/concat_npyV2.py {output} {input}"
+         "{P} ./scripts/concat_npyV2.py {output} {input} > {log}"
         
 rule admix:
     input:
-        res / "haplonet" / "sub{subsplit}" / "allchrom.loglike.npy" 
+        res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy" 
     output:
-        res / "admix" / "sub{subsplit}" / f"K{K}.s{SEED}.f.npy",
-        res / "admix" / "sub{subsplit}" / f"K{K}.s{SEED}.q"
+        res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.f.npy",
+        res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.q"
     params:
         out = lambda wc, output: output[0][:-6]
     threads: 20
@@ -90,12 +117,12 @@ rule admix:
 
 rule fatass:
     input:
-        l = res / "haplonet" / "sub{subsplit}" / "allchrom.loglike.npy",
-        f = res / "admix" / "sub{subsplit}" / f"K{K}.s{SEED}.f.npy",
-        q = res / "admix" / "sub{subsplit}" / f"K{K}.s{SEED}.q",
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        f = res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.f.npy",
+        q = res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.q"
     output:
-        res / "fatass" / "sub{subsplit}" / "allchrom.prob.npy",
-        res / "fatass" / "sub{subsplit}" / "allchrom.path",
+        res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.prob.npy",
+        res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.path",
     params:
         out = lambda wc, output: output[0][:-9]
     threads: 10
