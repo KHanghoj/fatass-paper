@@ -10,6 +10,8 @@ def add_ext(p, *args):
 P = config["python"]
 VCF = config["vcf"]
 HAPLONET = config["haplonet"]
+MASK_ANCESTRY = config["mask_anc"]
+PLOTTER = config["plotter"]
 BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
 K = config["K"]
@@ -18,29 +20,39 @@ SUBSPLIT_LST = config["subsplit"]
 SUBSPLIT_MAX = max(SUBSPLIT_LST)
 SUBSPLIT_ARG = "" if SUBSPLIT_MAX == 0 else f"--subsplit {SUBSPLIT_MAX}" 
 SAMPLES = config["samples"]
-# PC_ITERATIVE = config["iterative"]
-# MAX_MISSINGNESS = config["max_missingness"]
-# HET_HOM = "--het_mask" if config["het_hom"] == "het" else ""
-# POP_LABELS = config["labels"]
-# POPULATION = config["population"]
-# # LOGLIKE = "na.loglike{sp}allchrom.npy"
-# LOGLIKE = "na.new.loglike{sp}allchrom.npy"
-# LOGLIKE = "na.new.loglike{sp}allchrom_masked.npy"
+
+PC_ITERATIVE = config["iterative"]
+MAX_MISSINGNESS = config["max_missingness"]
+HET_HOM = "--het_mask" if config["het_hom"] == "het" else ""
+POP_LABELS = config["labels"]
 
 res = Path(config["output"])
 
-# # bname = f"{POPULATION}{{sp}}"
-# bname = f"{POPULATION}.new{{sp}}"
-# fs = bname + "K2.fatass"
-# # fs = bname + "K2.s1.fatass"
-# mk = bname + "allchrom.{t}"
+pcs = ["PC1", "PC2", "PC3"]
+pcs_comb = list(it.combinations(pcs, 2))
+t_wc = ["prob.npy", "path"]
+k_seed = f"K{K}_s{SEED}"
 
 with open(config["chromlist"], 'r') as fh:
     CHROMLIST = [x.rstrip() for x in fh]
 
+MASKERTYPES = ["posterior", "decoding"]
+
+wildcard_constraints:
+    t = "|".join(t_wc),
+    chrom = "|".join(CHROMLIST),
+    masktype = "|".join(MASKERTYPES),
+    maf_filter = "|".join(map(str, MAF_FILTER))
+
 rule all:
     input:
-        expand(res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.prob.npy", subsplit=SUBSPLIT_LST)
+        expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
+            "sub{subsplit}_{masktype}_{pc_comb[0]}_{pc_comb[1]}.png",
+            maf_filter = MAF_FILTER,
+            subsplit = SUBSPLIT_LST,
+            masktype = MASKERTYPES,
+            pc_comb = pcs_comb
+            )
 
 rule extract_samples:
     input:
@@ -105,8 +117,8 @@ rule admix:
     input:
         res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy" 
     output:
-        res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.f.npy",
-        res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.q"
+        res / "admix" / k_seed / "sub{subsplit}.f.npy",
+        res / "admix" / k_seed / "sub{subsplit}.q"
     params:
         out = lambda wc, output: output[0][:-6]
     threads: 20
@@ -118,11 +130,11 @@ rule admix:
 rule fatass:
     input:
         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
-        f = res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.f.npy",
-        q = res / "admix" / f"K{K}_s{SEED}" / "sub{subsplit}.q"
+        f = res / "admix" / k_seed / "sub{subsplit}.f.npy",
+        q = res / "admix" / k_seed / "sub{subsplit}.q"
     output:
-        res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.prob.npy",
-        res / "fatass" / f"K{K}_s{SEED}" / "sub{subsplit}.path",
+        res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+        res / "fatass" / k_seed / "sub{subsplit}.path",
     params:
         out = lambda wc, output: output[0][:-9]
     threads: 10
@@ -131,3 +143,54 @@ rule fatass:
         "--prop {input.q} --freq {input.f} "
         "--out {params.out} "
         "--threads {threads}"
+
+rule mask_posterior:
+    input:
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+    output:
+        multiext(str(res / "masked" / k_seed / "sub{subsplit}_posterior"), 
+                    ".npy", ".missingness", ".names", ".labels")
+    params:
+        outbase = lambda wc, output: output[0][:-4]
+    shell:
+        "{P} {MASK_ANCESTRY} --posterior {input.masker} "
+        "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+        "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
+
+rule mask_decoding:
+    input:
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "sub{subsplit}.path",
+    output:
+        multiext(str(res / "masked" / k_seed / "sub{subsplit}_decoding"), 
+                    ".npy", ".missingness", ".names", ".labels")
+    params:
+        outbase = lambda wc, output: output[0][:-4]
+    shell:
+        "{P} {MASK_ANCESTRY} --decoding {input.masker} "
+        "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+        "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
+
+rule pca:
+    input:
+        masker = res / "masked" / k_seed / "sub{subsplit}_{masktype}.npy",
+    output:
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvals",
+    params:
+        outbase = lambda wc, output: output[0][:-10]
+    threads: 60
+    shell: """
+    {HAPLONET} pca -l {input} -t {threads} --iterative {PC_ITERATIVE} \
+        -o {params.outbase} --filter {wildcards.maf_filter}
+    """
+
+rule plot:
+    input:
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+        res / "masked" / k_seed / "sub{subsplit}_{masktype}.labels",
+    output:
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}_{pc1}_{pc2}.png",
+    shell:
+        "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"

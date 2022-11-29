@@ -109,7 +109,7 @@ def main(argv):
         K = post.shape[2]
     elif args.decoding:
         ## loading decoding
-        post = np.loadtxt(args.decoding, dtype=int)
+        post = np.loadtxt(args.decoding, dtype=int).T
         K = post.max()+1
     else:
         print("should not happen", file=fh)
