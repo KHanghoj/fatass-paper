@@ -17,8 +17,8 @@ iterative: 2   # number of eigenvectors used for structure in pca
 max_missingness: 0.90
 het_hom: "het" # 'het' will mask per haplotype. 'hom' mask per diploid
 chromlist: "chromlist.txt" #one chromosome per line. same order as loglike file from haplonet
-samples: "na.new.samples"
-labels: "na.new.pop"
+samples: "na.samples"
+labels: "na.pop"
 # population: "na" ## can either take 'na' or 'aa'
 output: "res_coolsnk"
 
