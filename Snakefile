@@ -6,103 +6,189 @@ def add_ext(p, *args):
         base += str(x)
     return Path(base)
     # return Path(str(p)+str(e))
-
-HAPLONET = config["haplonet"]
+# bcftools view -S na.samples -q 0.05 -Q 0.95 -m 2 -M 2 -v snps -Oz -o vcf/na.chr5.vcf.gz --threads 4 /emc/kristian/1kg_20220422/1kGP_high_coverage_Illumina.chr5.filtered.SNV_INDEL_SV_phased_panel.vcf.gza
 P = config["python"]
+VCF = config["vcf"]
+HAPLONET = config["haplonet"]
 MASK_ANCESTRY = config["mask_anc"]
 PLOTTER = config["plotter"]
-
+BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
+K = config["K"]
+SEED = config["seed"]
+SUBSPLIT_LST = config["subsplit"]
+SUBSPLIT_MAX = max(SUBSPLIT_LST)
+SUBSPLIT_ARG = "" if SUBSPLIT_MAX == 0 else f"--subsplit {SUBSPLIT_MAX}" 
+SAMPLES = config["samples"]
+
 PC_ITERATIVE = config["iterative"]
 MAX_MISSINGNESS = config["max_missingness"]
 HET_HOM = "--het_mask" if config["het_hom"] == "het" else ""
-SAMPLES = config["samples"]
 POP_LABELS = config["labels"]
-POPULATION = config["population"]
-# LOGLIKE = "na.loglike{sp}allchrom.npy"
-LOGLIKE = "na.new.loglike{sp}allchrom.npy"
-LOGLIKE = "na.new.loglike{sp}allchrom_masked.npy"
 
 res = Path(config["output"])
 
-# bname = f"{POPULATION}{{sp}}"
-bname = f"{POPULATION}.new{{sp}}"
-fs = bname + "K2.fatass"
-# fs = bname + "K2.s1.fatass"
-mk = bname + "allchrom.{t}"
+pcs = ["PC1", "PC2", "PC3"]
+pcs_comb = list(it.combinations(pcs, 2))
+t_wc = ["prob.npy", "path"]
+k_seed = f"K{K}_s{SEED}"
 
 with open(config["chromlist"], 'r') as fh:
     CHROMLIST = [x.rstrip() for x in fh]
 
-pcs = ["PC1", "PC2", "PC3"]
-pcs_comb = list(it.combinations(pcs, 2))
-sp_wc  = [".subsplit.", "."]
-t_wc = ["prob.npy", "path"]
-
+MASKERTYPES = ["posterior", "decoding"]
 
 wildcard_constraints:
-    sp = "|".join(sp_wc),
     t = "|".join(t_wc),
     chrom = "|".join(CHROMLIST),
+    masktype = "|".join(MASKERTYPES),
     maf_filter = "|".join(map(str, MAF_FILTER))
-
-def get_concatter(t):
-    if t == "prob.npy":
-        return "scripts/concat_npy.py"    
-    else:
-        return "scripts/concat_paths.py" 
 
 rule all:
     input:
-        expand(res / "pca" / "MAF{maf_filter}" / add_ext(mk, ".{pc_comb[0]}.{pc_comb[1]}", ".png"), 
+        expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
+            "sub{subsplit}_{masktype}_{pc_comb[0]}_{pc_comb[1]}.png",
             maf_filter = MAF_FILTER,
-            sp = sp_wc,
-            t = t_wc,
+            subsplit = SUBSPLIT_LST,
+            masktype = MASKERTYPES,
             pc_comb = pcs_comb
             )
 
-rule gen_filelist:
+rule extract_samples:
     input:
-        expand("fatass" / add_ext(fs, ".{chrom}.{t}"), chrom=CHROMLIST, allow_missing=True)
+        VCF
     output:
-        res / "filelist" / add_ext(fs, ".{t}.filelist")
-    run:
-        with open(output[0], 'w') as fh:
-            for line in input:
-                print(line, file=fh)
-    
-rule concat_post_decode:
-    input:
-        res / "filelist" / add_ext(fs, ".{t}.filelist")
-    output:
-        res / "concat" / add_ext(fs, ".allchrom.{t}")
-    params:
-        software = lambda wc: get_concatter(wc.t)
+        res / "vcf" / "{chrom}.vcf.gz"
+    threads: 4
     shell:
-        "{P} {params.software} {input} {output}"
+        "{BCFTOOLS} view --threads {threads} "
+        "-S {SAMPLES} -q 0.05 -Q 0.95 -r {wildcards.chrom} "
+        "-m 2 -M 2 -v snps -Oz -o {output} {input}"
 
-rule mask:
+rule train:
     input:
-        loglike = LOGLIKE,
-        masker = res / "concat" / add_ext(fs, ".allchrom.{t}")
+        res / "vcf" / "{chrom}.vcf.gz"
     output:
-        multiext(str(res / "masked" / mk), 
+        res / "haplonet" / "{chrom}" / "temp.loglike.npy",
+    log:
+        res / "haplonet" / "{chrom}" / "temp.loglike.npy.log",  
+    threads: 10
+    params:
+        out = lambda wc, output: output[0][:-12],
+    shell:
+        "{HAPLONET} train --vcf {input} "
+        "--out {params.out} {SUBSPLIT_ARG} "
+        "--threads {threads} > {log}"
+
+rule make_subsplits:
+    input:
+        nosplit = res / "haplonet" / "{chrom}" / f"temp.loglike.npy",  
+    output:
+        res / "haplonet_split" / "{chrom}" / "sub{subsplit}.loglike.npy"
+    run:
+        import numpy as np
+        outdir = os.path.dirname(output[0])
+        shell("mkdir -p {outdir}")
+        maxsplit = input.nosplit.replace(".loglike.npy", ".split.loglike.npy")
+        if int(wildcards.subsplit) == 0:
+            shell("cp {input.nosplit} {output[0]}")
+        elif int(wildcards.subsplit) == SUBSPLIT_MAX:
+            shell("cp {maxsplit} {output[0]}")
+        else:
+            out = np.load(maxsplit)
+            temp_start = SUBSPLIT_MAX
+            while temp_start != int(wildcards.subsplit):
+                out = out[0::2, :, :] + out[1::2, :, :]
+                temp_start -= temp_start // 2
+            np.save(output[0], out)
+
+# rule gen_filelist:
+#     input:
+#         expand(res / "haplonet_split" / "{chrom}" / "sub{subsplit}.loglike.npy"
+#             chrom = CHROMLIST, allow_missing=True)
+#     output:
+#         res / "haplonet_split" / "sub{subsplit}.filelist"
+#     run:
+#        with open(output[0], 'w') as fh:
+#             for x in input:
+#                 print(x, file=fh)
+
+rule concat:
+    input:
+        expand(res / "haplonet_split" / "{chrom}" / "sub{subsplit}.loglike.npy",
+            chrom = CHROMLIST, allow_missing=True)
+    output:
+        protected(res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy") 
+    log:
+        res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy.log" 
+    shell:
+         "{P} ./scripts/concat_npyV2.py {output} {input} > {log}"
+        
+rule admix:
+    input:
+        res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy" 
+    output:
+        res / "admix" / k_seed / "sub{subsplit}.f.npy",
+        res / "admix" / k_seed / "sub{subsplit}.q"
+    params:
+        out = lambda wc, output: output[0][:-6]
+    threads: 20
+    shell:
+        "{HAPLONET} admix --like {input} "
+        "--K {K} --seed {SEED} --out {params.out} "
+        "--threads {threads}"
+
+rule fatass:
+    input:
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        f = res / "admix" / k_seed / "sub{subsplit}.f.npy",
+        q = res / "admix" / k_seed / "sub{subsplit}.q"
+    output:
+        res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+        res / "fatass" / k_seed / "sub{subsplit}.path",
+    params:
+        out = lambda wc, output: output[0][:-9]
+    threads: 10
+    shell:
+        "{HAPLONET} fatash --like {input.l} "
+        "--prop {input.q} --freq {input.f} "
+        "--out {params.out} "
+        "--threads {threads}"
+
+rule mask_posterior:
+    input:
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+    output:
+        multiext(str(res / "masked" / k_seed / "sub{subsplit}_posterior"), 
                     ".npy", ".missingness", ".names", ".labels")
     params:
-        dt = lambda wc: "--posterior" if wc.t == "prob.npy" else "--decoding",
         outbase = lambda wc, output: output[0][:-4]
-    shell: """
-    {P} {MASK_ANCESTRY} {params.dt} {input.masker} --loglike {input.loglike} \
-        --labels {POP_LABELS}  --names {SAMPLES}  --out {params.outbase} \
-        --max_missing {MAX_MISSINGNESS} {HET_HOM}
-    """
+    shell:
+        "{P} {MASK_ANCESTRY} --posterior {input.masker} "
+        "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+        "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
+
+rule mask_decoding:
+    input:
+        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "sub{subsplit}.path",
+    output:
+        multiext(str(res / "masked" / k_seed / "sub{subsplit}_decoding"), 
+                    ".npy", ".missingness", ".names", ".labels")
+    params:
+        outbase = lambda wc, output: output[0][:-4]
+    shell:
+        "{P} {MASK_ANCESTRY} --decoding {input.masker} "
+        "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+        "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
 
 rule pca:
     input:
-        res / "masked" / add_ext(mk, ".npy")
+        masker = res / "masked" / k_seed / "sub{subsplit}_{masktype}.npy",
     output:
-        res / "pca" / "MAF{maf_filter}" / add_ext(mk, ".eigenvecs"),
-        res / "pca" / "MAF{maf_filter}" / add_ext(mk, ".eigenvals"),
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvals",
     params:
         outbase = lambda wc, output: output[0][:-10]
     threads: 60
@@ -113,10 +199,9 @@ rule pca:
 
 rule plot:
     input:
-        res / "pca" / "MAF{maf_filter}" / add_ext(mk, ".eigenvecs"),
-        res / "masked" / add_ext(mk, ".labels")
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+        res / "masked" / k_seed / "sub{subsplit}_{masktype}.labels",
     output:
-        res / "pca" / "MAF{maf_filter}" / add_ext(mk, ".{pc1}.{pc2}", ".png"),
+        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}_{pc1}_{pc2}.png",
     shell:
         "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"
-    
