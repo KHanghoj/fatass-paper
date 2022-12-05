@@ -15,6 +15,7 @@ PLOTTER = config["plotter"]
 BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
 K = config["K"]
+ALPHA = config["alpha"]
 SEED = config["seed"]
 SUBSPLIT_LST = config["subsplit"]
 SUBSPLIT_MAX = max(SUBSPLIT_LST)
@@ -54,6 +55,24 @@ rule all:
             pc_comb = pcs_comb
             )
 
+rule pca_decoding:
+    input:
+        expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
+            "sub{subsplit}_decoding_{pc_comb[0]}_{pc_comb[1]}.png",
+            maf_filter = MAF_FILTER,
+            subsplit = SUBSPLIT_LST,
+            pc_comb = pcs_comb
+            )
+
+rule pca_posterior:
+    input:
+        expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
+            "sub{subsplit}_posterior_{pc_comb[0]}_{pc_comb[1]}.png",
+            maf_filter = MAF_FILTER,
+            subsplit = SUBSPLIT_LST,
+            pc_comb = pcs_comb
+            )
+
 rule extract_samples:
     input:
         VCF
@@ -72,7 +91,7 @@ rule train:
         res / "haplonet" / "{chrom}" / "temp.loglike.npy",
     log:
         res / "haplonet" / "{chrom}" / "temp.loglike.npy.log",  
-    threads: 10
+    threads: 4
     params:
         out = lambda wc, output: output[0][:-12],
     shell:
@@ -138,6 +157,15 @@ rule admix:
         "--K {K} --seed {SEED} --out {params.out} "
         "--threads {threads}"
 
+def set_alpha(subsplit):
+    if str(ALPHA).lower() == "est":
+        return "--alpha_save"
+    elif int(subsplit) == 0:
+        return f"--no_optim --alpha_save --alpha {ALPHA}"
+    else:
+        scaled_alpha = float(ALPHA) / float(subsplit)
+        return f"--no_optim --alpha_save --alpha {scaled_alpha}"
+
 rule fatass:
     input:
         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
@@ -146,11 +174,14 @@ rule fatass:
     output:
         res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
         res / "fatass" / k_seed / "sub{subsplit}.path",
+        res / "fatass" / k_seed / "sub{subsplit}.alpha"
     params:
-        out = lambda wc, output: output[0][:-9]
+        out = lambda wc, output: output[0][:-9],
+        alpha = lambda wc: set_alpha(wc.subsplit)
     threads: 10
     shell:
-        "{HAPLONET} fatash --like {input.l} "
+        "{HAPLONET} fatash {params.alpha} "
+        "--like {input.l} "
         "--prop {input.q} --freq {input.f} "
         "--out {params.out} "
         "--threads {threads}"

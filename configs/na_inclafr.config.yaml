@@ -1,0 +1,25 @@
+vcf: "/emc/kristian/1kg_20220422/1kGP_high_coverage_Illumina.{chrom}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+bcftools: "/home/krishang/software/bcftools/bcftools-1.16/bin/bcftools"
+python: "/home/krishang/software/vir_python310/bin/python"
+mask_anc: "/emc/kristian/top_secret2/fatass-paper/scripts/mask_ancV3.py"
+plotter: "/emc/kristian/top_secret2/fatass-paper/scripts/plot.R"
+haplonet: "/home/jonas/miniconda3/bin/haplonet"
+seed: 1
+alpha: 0.01 # alpha parameter for fatass. float or 'est'
+K: 3
+subsplit: # Must be a 0,2,4,8,16,etc
+  - 0
+  - 2
+  - 4 
+filter: 
+  - 0.05   # minimum frequency filter for PCA (similar to MAF)
+  - 0.01
+  - 0.001
+iterative: 2   # number of eigenvectors used for structure in pca
+max_missingness: 0.90
+het_hom: "het" # 'het' will mask per haplotype. 'hom' mask per diploid
+chromlist: "/emc/kristian/top_secret2/fatass-paper/configs/chromlist.txt" #one chromosome per line. same order as loglike file from haplonet
+samples: "/emc/kristian/top_secret2/fatass-paper/configs/na_inclafr.samples"
+labels: "/emc/kristian/top_secret2/fatass-paper/configs/na_inclafr.pops"
+output: "res_inclafr"
+
