@@ -53,7 +53,10 @@ rule all:
             subsplit = SUBSPLIT_LST,
             masktype = MASKERTYPES,
             pc_comb = pcs_comb
-            )
+            ),
+        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+            subsplit = SUBSPLIT_LST
+        )
 
 rule pca_decoding:
     input:
@@ -62,7 +65,10 @@ rule pca_decoding:
             maf_filter = MAF_FILTER,
             subsplit = SUBSPLIT_LST,
             pc_comb = pcs_comb
-            )
+            ),
+        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+            subsplit = SUBSPLIT_LST
+        )
 
 rule pca_posterior:
     input:
@@ -71,7 +77,10 @@ rule pca_posterior:
             maf_filter = MAF_FILTER,
             subsplit = SUBSPLIT_LST,
             pc_comb = pcs_comb
-            )
+            ),
+        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+            subsplit = SUBSPLIT_LST
+        )
 
 rule extract_samples:
     input:
@@ -84,6 +93,28 @@ rule extract_samples:
         "-S {SAMPLES} -q 0.05 -Q 0.95 -r {wildcards.chrom} "
         "-m 2 -M 2 -v snps -Oz -o {output} {input}"
 
+rule get_bp:
+    input:
+        res / "vcf" / "{chrom}.vcf.gz"
+    output:
+        res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt",
+    params:
+        bp = lambda wc: 1024 if int(wc.subsplit) == 0 else 1024 // int(wc.subsplit),
+        out = lambda wc, output: output[0][:-14]
+    log:
+        res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt.log",
+    shell:
+        "{HAPLONET} convert -l {params.bp} -w -o {params.out} --vcf {input}"
+
+rule concat_chrom_bp:
+    input:
+        expand(res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt",
+            chrom=CHROMLIST, allow_missing=True)
+    output:
+        res / "basepos" / "allchrom_sub{subsplit}.positions.txt"
+    shell:
+        "cat {input} > {output}"
+        
 rule train:
     input:
         res / "vcf" / "{chrom}.vcf.gz"
