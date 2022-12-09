@@ -8,7 +8,6 @@ for idx, x in enumerate(d):
 names = np.loadtxt("../configs/na_inclafr.samples", dtype=str)
 names_dup = np.repeat(names, 2)
 maxs = [x.max(axis=2) for x in d]
-cols = ['r', 'g', 'b']
 for name in ("HG00096", "HG02089", "HG02006"):
 
     K = d[0].shape[2]
@@ -26,27 +25,14 @@ for name in ("HG00096", "HG02089", "HG02006"):
 
     # chrom1
     N_obss = 525
-    fig, axes = plt.subplots(3,1, figsize=(24,8), sharex=True)
-    fig.suptitle(f"{name} hap1")
-    for a in axes:
-        a.margins(x=0)
-    megamin = ys.min()
-    for idx, sub in enumerate([0,2,4]):
-        ax = axes[idx]
-        ax.set_title(f"sub{sub}")
-        ax.plot(pos[0][:N_obss], ys[:N_obss, idx], c=cols[idx])
-        ax.set_ylim([0, megamin])
-    fig.tight_layout()
-    fig.savefig(f"chr1_{name}_loglikes.png", bbox_inches='tight', dpi=500)
-
-    plt.close(fig)
+    megamin = ys[:N_obss].min()
     fig, ax = plt.subplots(1,1, figsize=(24,8), sharex=True)
     fig.suptitle(f"{name} hap1")
     ax.margins(x=0)
-    megamin = ys.min()
     for idx, sub in enumerate([0,2,4]):
         ax.plot(pos[0][:N_obss], ys[:N_obss, idx], label=f"lab{sub}")
-    ax.set_ylim([0, megamin])
+    ax.set_ylim([megamin, 0])
     ax.legend()
+    ax.grid()
     fig.tight_layout()
-    fig.savefig(f"chr1_{name}_loglikes_inone.png", bbox_inches='tight', dpi=500)
+    fig.savefig(f"chr1_{name}_loglikes.png", bbox_inches='tight', dpi=500)
