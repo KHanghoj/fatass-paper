@@ -14,6 +14,7 @@ MASK_ANCESTRY = config["mask_anc"]
 PLOTTER = config["plotter"]
 BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
+WINSIZE_SUB0 = config["winsize_sub0"]
 K = config["K"]
 ALPHA = config["alpha"]
 SEED = config["seed"]
@@ -54,7 +55,7 @@ rule all:
             masktype = MASKERTYPES,
             pc_comb = pcs_comb
             ),
-        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+        expand(res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
             subsplit = SUBSPLIT_LST
         )
 
@@ -66,7 +67,7 @@ rule pca_decoding:
             subsplit = SUBSPLIT_LST,
             pc_comb = pcs_comb
             ),
-        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+        expand(res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
             subsplit = SUBSPLIT_LST
         )
 
@@ -78,7 +79,7 @@ rule pca_posterior:
             subsplit = SUBSPLIT_LST,
             pc_comb = pcs_comb
             ),
-        expand(res / "basepos" / "allchrom_sub{subsplit}.positions.txt",
+        expand(res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
             subsplit = SUBSPLIT_LST
         )
 
@@ -93,25 +94,101 @@ rule extract_samples:
         "-S {SAMPLES} -q 0.05 -Q 0.95 -r {wildcards.chrom} "
         "-m 2 -M 2 -v snps -Oz -o {output} {input}"
 
-rule get_bp:
+rule query_pos:
     input:
         res / "vcf" / "{chrom}.vcf.gz"
     output:
+        res / "vcf" / "{chrom}.positions",
+    shell:
+        "{BCFTOOLS} query -f '%POS\\n' {input} > {output}"
+
+rule get_bp:
+    input:
+        res / "vcf" / "{chrom}.positions",
+    output:
         res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt",
     params:
-        bp = lambda wc: 1024 if int(wc.subsplit) == 0 else 1024 // int(wc.subsplit),
-        out = lambda wc, output: output[0][:-14]
-    log:
-        res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt.log",
-    shell:
-        "{HAPLONET} convert -l {params.bp} -w -o {params.out} --vcf {input}"
+        subsplit = lambda wc: wc.subsplit if int(wc.subsplit)>0 else 1, 
+        windowsize_nosub = WINSIZE_SUB0
+    run:
+        import sys
+        import numpy as np
+        from math import ceil
+
+        pos = input[0]
+        chrom = wildcards.chrom
+        subsplit = int(params.subsplit)
+        windowsize_nosub = params.windowsize_nosub
+        out = output[0]
+        windowsize_sub = windowsize_nosub // subsplit
+        S = np.loadtxt(pos, dtype=int)
+        if (S.shape[0] % windowsize_nosub) < windowsize_nosub//2:
+        	nSeg = S.shape[0]//windowsize_nosub
+        else:
+        	nSeg = ceil(S.shape[0]/windowsize_nosub)
+
+        M = np.empty((nSeg*subsplit, 3), dtype=object)
+
+        M[:,0] = chrom
+        for i in range(nSeg):
+        	positions = S[i*windowsize_nosub:i*windowsize_nosub+windowsize_nosub]
+        	splits = np.array_split(positions, subsplit)
+        	for subw, w in enumerate(splits):
+        		M_idx = i*subsplit + subw
+        		if i == 0 and subw==0:
+        			M[M_idx, 1]=w[0]
+        		else:
+        			M[M_idx-1, 2] = w[0]
+        			M[M_idx, 1] = w[0]
+        M[-1, 2] = S[-1]
+        np.savetxt(out, M, delimiter="\t", fmt="%s")
+
+# rule get_bp:
+#     input:
+#         res / "vcf" / "{chrom}.vcf.gz"
+#     output:
+#         res / "basepos" / "sub0" / "{chrom}.positions.txt",
+#     params:
+#         bp = 1024,
+#         out = lambda wc, output: output[0][:-14]
+#     shell:
+#         "{HAPLONET} convert -l {params.bp} -w -o {params.out} --vcf {input}"
+
+# rule get_bp_subsplit:
+#     input:
+#         vcf = res / "vcf" / "{chrom}.vcf.gz",
+#         nosub = res / "basepos" / "sub0" / "{chrom}.positions.txt",
+#     output:
+#         t = temp(res / "basepos" / "sub{subsplit}" / "{chrom}.temp.positions.txt"),
+#         fixed = res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt",
+#     params:
+#         bp = lambda wc: 1024 // int(wc.subsplit),
+#         out = lambda wc, output: output.t[:-14]
+#     wildcard_constraints:
+#         subsplit = "|".join([str(x) for x in SUBSPLIT_LST if int (x) != 0])
+#     run:
+#         shell("{HAPLONET} convert -l {params.bp} -w -o {params.out} --vcf {input.vcf}")
+#         with open(input.nosub, 'r') as fh:
+#             nlines = 0
+#             for line in fh:
+#                 nlines+=1
+#             maxlines = nlines * int(wildcards.subsplit)
+#             maxval = line.rstrip().split()[-1]    
+#         with open(output.t, 'r') as fhin, open(output.fixed, 'w') as fhout:
+#             for idx, line in enumerate(fhin, start=1):
+#                 chrom, start, end = line.rstrip().split()
+#                 if idx == maxlines:
+#                     print(f"{chrom}\t{start}\t{maxval}", file=fhout)
+#                     break 
+#                 else:
+#                     print(f"{chrom}\t{start}\t{end}", file=fhout)
 
 rule concat_chrom_bp:
     input:
         expand(res / "basepos" / "sub{subsplit}" / "{chrom}.positions.txt",
             chrom=CHROMLIST, allow_missing=True)
     output:
-        res / "basepos" / "allchrom_sub{subsplit}.positions.txt"
+        res / "basepos" / "allchrom.sub{subsplit}.positions.txt"
     shell:
         "cat {input} > {output}"
         
@@ -125,8 +202,9 @@ rule train:
     threads: 4
     params:
         out = lambda wc, output: output[0][:-12],
+        windowsize_nosub = WINSIZE_SUB0
     shell:
-        "{HAPLONET} train --vcf {input} "
+        "{HAPLONET} train -x {params.windowsize_nosub} --vcf {input} "
         "--out {params.out} {SUBSPLIT_ARG} "
         "--threads {threads} > {log}"
 
@@ -188,30 +266,31 @@ rule admix:
         "--K {K} --seed {SEED} --out {params.out} "
         "--threads {threads}"
 
-def set_alpha(subsplit):
+def set_alpha():
     if str(ALPHA).lower() == "est":
-        return "--alpha_save"
-    elif int(subsplit) == 0:
-        return f"--no_optim --alpha_save --alpha {ALPHA}"
+        return "--alpha_save --optim"
     else:
-        scaled_alpha = float(ALPHA) / float(subsplit)
-        return f"--no_optim --alpha_save --alpha {scaled_alpha}"
+        return f"--alpha_save --alpha {ALPHA}"
 
 rule fatass:
     input:
         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
         f = res / "admix" / k_seed / "sub{subsplit}.f.npy",
-        q = res / "admix" / k_seed / "sub{subsplit}.q"
+        q = res / "admix" / k_seed / "sub{subsplit}.q",
+        w = res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
     output:
         res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
         res / "fatass" / k_seed / "sub{subsplit}.path",
-        res / "fatass" / k_seed / "sub{subsplit}.alpha"
+        res / "fatass" / k_seed / "sub{subsplit}.alpha",
+        res / "fatass" / k_seed / "sub{subsplit}.windows",
     params:
         out = lambda wc, output: output[0][:-9],
-        alpha = lambda wc: set_alpha(wc.subsplit)
+        alpha = set_alpha()
     threads: 10
     shell:
         "{HAPLONET} fatash {params.alpha} "
+        "-w <( cut -f 2 {input.w} ) "
+        "--window_save "
         "--like {input.l} "
         "--prop {input.q} --freq {input.f} "
         "--out {params.out} "
@@ -253,7 +332,7 @@ rule pca:
         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvals",
     params:
         outbase = lambda wc, output: output[0][:-10]
-    threads: 60
+    threads: 40
     shell: """
     {HAPLONET} pca -l {input} -t {threads} --iterative {PC_ITERATIVE} \
         -o {params.outbase} --filter {wildcards.maf_filter}
