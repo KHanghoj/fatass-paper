@@ -3,8 +3,8 @@ bcftools: "/home/krishang/software/bcftools/bcftools-1.16/bin/bcftools"
 python: "/home/krishang/software/vir_python310/bin/python"
 mask_anc: "/emc/kristian/top_secret2/fatass-paper/scripts/mask_ancV3.py"
 plotter: "/emc/kristian/top_secret2/fatass-paper/scripts/plot.R"
-# haplonet: "/home/jonas/miniconda3/bin/haplonet"
-haplonet: "/home/krishang/mambaforge/envs/haplonet/bin/haplonet"
+haplonet: "/home/jonas/miniconda3/bin/haplonet"
+# haplonet: "/home/krishang/mambaforge/envs/haplonet/bin/haplonet"
 winsize_sub0: 1024
 seed: 1
 alpha: 0.01

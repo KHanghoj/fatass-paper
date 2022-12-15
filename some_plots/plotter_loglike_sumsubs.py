@@ -25,14 +25,44 @@ for name in ("HG00096", "HG02089", "HG02006"):
 
     # chrom1
     N_obss = 525
-    megamin = ys[:N_obss].min()
+    pos_sub = pos[0][:N_obss]
+    ys_sub = ys[:N_obss]
+    megamin = ys_sub.min()
     fig, ax = plt.subplots(1,1, figsize=(24,8), sharex=True)
     fig.suptitle(f"{name} hap1")
     ax.margins(x=0)
     for idx, sub in enumerate([0,2,4]):
-        ax.plot(pos[0][:N_obss], ys[:N_obss, idx], label=f"lab{sub}")
+        ax.plot(pos_sub, ys_sub[:, idx], label=f"lab{sub}")
     ax.set_ylim([megamin, 0])
     ax.legend()
     ax.grid()
     fig.tight_layout()
     fig.savefig(f"chr1_{name}_loglikes.png", bbox_inches='tight', dpi=500)
+    plt.close(fig)
+
+    ll_ratio_02 = -2 * (ys_sub[:, 0] - ys_sub[:,1])
+    ll_ratio_04 = -2 * (ys_sub[:, 0] - ys_sub[:,2])
+
+    fig, ax = plt.subplots(1,1, figsize=(24,8), sharex=True)
+    fig.suptitle(f"{name} hap1")
+    ax.margins(x=0)
+    ax.plot(pos_sub, ll_ratio_02, label="lab02")
+    ax.plot(pos_sub, ll_ratio_04, label="lab04")    
+    ax.legend()
+    ax.grid()
+    fig.tight_layout()
+    fig.savefig(f"chr1_{name}_llr.png", bbox_inches='tight', dpi=500)
+    plt.close(fig)
+    
+
+    ys_sub_norm = ys_sub[:, 1:] - ys_sub[:,0].reshape(N_obss,-1)
+    fig, ax = plt.subplots(1,1, figsize=(24,8), sharex=True)
+    fig.suptitle(f"{name} hap1")
+    ax.margins(x=0)
+    ax.plot(pos_sub, ys_sub_norm[:,0], label="lab02")
+    ax.plot(pos_sub, ys_sub_norm[:,1], label="lab04")    
+    ax.legend()
+    ax.grid()
+    fig.tight_layout()
+    fig.savefig(f"chr1_{name}_lldiff.png", bbox_inches='tight', dpi=500)
+    plt.close(fig)
