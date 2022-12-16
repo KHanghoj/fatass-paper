@@ -6,9 +6,13 @@ import argparse
 # Argparse
 parser = argparse.ArgumentParser(prog="Prepare windows for Fatass")
 parser.add_argument("-w", "--windows", help="Genomic position per window")
-parser.add_argument("-L", help="LogLikes in incremental order (0,2,4,8,16 ... )", default=None, nargs="+")
+parser.add_argument("-L", help="LogLikes in incremental order (0,2,4,8,16 ... )",
+                    default=None, nargs="+")
 parser.add_argument("-o", "--out", help="path to output")
-parser.add_argument("--normalizer", help="Scaling basepair distance between windows", default=1e6,type=float)
+parser.add_argument("--normalizer", help="Scaling basepair distance between windows",
+                    default=1e6,type=float)
+parser.add_argument("--loglike_diff", help="Minimum loglike units improvement for one subsplit to the next",
+                    default=100, type=float)
 args = parser.parse_args()
 
 windows = np.loadtxt(args.windows, usecols=[1,2]).astype(np.float32).mean(1)
@@ -54,7 +58,7 @@ else:
     res = np.zeros(Wmin, dtype=float)
     for i in range(N):
         for (sl1, sl2) in zip(sumlogs, sumlogs[1:]):
-            res[:] += (sl2[:,i] > (sl1[:,i]+200)).astype(int)
+            res[:] += (sl2[:,i] > (sl1[:,i]+args.loglike_diff)).astype(int)
         print(f"{i+1}/{N}", end='\r')
         log[i] = np.unique(res, return_counts=1)[-1] # count the differences
         for idx, x in enumerate(res):

@@ -3,17 +3,15 @@ bcftools: "/home/krishang/software/bcftools/bcftools-1.16/bin/bcftools"
 python: "/home/krishang/software/vir_python310/bin/python"
 mask_anc: "/emc/kristian/top_secret2/fatass-paper/scripts/mask_ancV3.py"
 plotter: "/emc/kristian/top_secret2/fatass-paper/scripts/plot.R"
-# haplonet: "/home/jonas/miniconda3/bin/haplonet"
-haplonet: "/home/krishang/mambaforge/envs/haplonet/bin/haplonet"
+haplonet: "/home/jonas/miniconda3/bin/haplonet"
+# haplonet: "/home/krishang/mambaforge/envs/haplonet/bin/haplonet"
 seed: 1
 winsize_sub0: 1024
-loglike_diff: 50
-alpha: 0.01
-K: 2
-subsplit: # Must be a 0,2,4,8,16,etc
+# alpha: 0.0001 # alpha parameter for fatass. float or 'est'
+alpha: 0.01 # alpha parameter for fatass. float or 'est'
+K: 3
+subsplit: # Must be a 0,2,4,8,16,etc 0 must be included
   - 0
-  - 2
-  - 4 
 filter: 
   - 0.05   # minimum frequency filter for PCA (similar to MAF)
   - 0.01
@@ -22,7 +20,7 @@ iterative: 2   # number of eigenvectors used for structure in pca
 max_missingness: 0.90
 het_hom: "het" # 'het' will mask per haplotype. 'hom' mask per diploid
 chromlist: "/emc/kristian/top_secret2/fatass-paper/configs/chromlist.txt" #one chromosome per line. same order as loglike file from haplonet
-samples: "/emc/kristian/top_secret2/fatass-paper/configs/na.samples"
-labels: "/emc/kristian/top_secret2/fatass-paper/configs/na.pop"
-output: "res"
+samples: "/emc/kristian/top_secret2/fatass-paper/configs/na_inclafr.samples"
+labels: "/emc/kristian/top_secret2/fatass-paper/configs/na_inclafr.pops"
+output: "res_inclafr_hapla"
 

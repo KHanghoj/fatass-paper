@@ -15,6 +15,7 @@ PLOTTER = config["plotter"]
 BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
 WINSIZE_SUB0 = config["winsize_sub0"]
+LOGLIKE_DIFF = config["loglike_diff"]
 K = config["K"]
 ALPHA = config["alpha"]
 SEED = config["seed"]
@@ -22,7 +23,6 @@ SUBSPLIT_LST = config["subsplit"]
 SUBSPLIT_MAX = max(SUBSPLIT_LST)
 SUBSPLIT_ARG = "" if SUBSPLIT_MAX == 0 else f"--subsplit {SUBSPLIT_MAX}" 
 SAMPLES = config["samples"]
-
 PC_ITERATIVE = config["iterative"]
 MAX_MISSINGNESS = config["max_missingness"]
 HET_HOM = "--het_mask" if config["het_hom"] == "het" else ""
@@ -74,15 +74,23 @@ rule pca_decoding:
 rule pca_posterior:
     input:
         expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
-            "sub{subsplit}_posterior_{pc_comb[0]}_{pc_comb[1]}.png",
+            "posterior_{pc_comb[0]}_{pc_comb[1]}.png",
             maf_filter = MAF_FILTER,
             subsplit = SUBSPLIT_LST,
             pc_comb = pcs_comb
             ),
-        expand(res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
-            subsplit = SUBSPLIT_LST
-        )
-
+        res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.hist.png",
+# rule pca_posterior:
+#     input:
+#         expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
+#             "sub{subsplit}_posterior_{pc_comb[0]}_{pc_comb[1]}.png",
+#             maf_filter = MAF_FILTER,
+#             subsplit = SUBSPLIT_LST,
+#             pc_comb = pcs_comb
+#             ),
+#         expand(res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
+#             subsplit = SUBSPLIT_LST
+#         )
 rule extract_samples:
     input:
         VCF
@@ -266,6 +274,27 @@ rule admix:
         "--K {K} --seed {SEED} --out {params.out} "
         "--threads {threads}"
 
+rule get_cool_windows:
+    input:
+        l = expand(res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+                    subsplit = SUBSPLIT_LST),
+        w = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.positions.txt",
+    output:
+        w = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt",
+        c = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts",
+        b = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.bool",
+    shell:
+        "{P} ./scripts/prep_windows_fatassV2.py -w {input.w} -L {input.l} -o {output.w} --loglike_diff {LOGLIKE_DIFF}" 
+
+rule plot_win_dist:
+    input:
+        res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts",
+    output:
+        res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.hist.png",
+        res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.perpop.png",
+    shell:
+        "Rscript ./scripts/plot_windowsubsplit.R {input} {POP_LABELS} {output}"
+
 def set_alpha():
     if str(ALPHA).lower() == "est":
         return "--alpha_save --optim"
@@ -274,15 +303,15 @@ def set_alpha():
 
 rule fatass:
     input:
-        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
-        f = res / "admix" / k_seed / "sub{subsplit}.f.npy",
-        q = res / "admix" / k_seed / "sub{subsplit}.q",
-        w = res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
+        l = res / "haplonet_split" / f"allchrom.sub{SUBSPLIT_MAX}.loglike.npy", 
+        f = res / "admix" / k_seed / f"sub{SUBSPLIT_MAX}.f.npy",
+        q = res / "admix" / k_seed / f"sub{SUBSPLIT_MAX}.q",
+        w = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt",
     output:
-        res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
-        res / "fatass" / k_seed / "sub{subsplit}.path",
-        res / "fatass" / k_seed / "sub{subsplit}.alpha",
-        res / "fatass" / k_seed / "sub{subsplit}.windows",
+        res / "fatass" / k_seed / f"cool.prob.npy",
+        res / "fatass" / k_seed / f"cool.path",
+        res / "fatass" / k_seed / f"cool.alpha",
+        res / "fatass" / k_seed / f"cool.windows",
     params:
         out = lambda wc, output: output[0][:-9],
         alpha = set_alpha()
@@ -298,10 +327,10 @@ rule fatass:
 
 rule mask_posterior:
     input:
-        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
-        masker = res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+        l = res / "haplonet_split" / f"allchrom.sub{SUBSPLIT_MAX}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "cool.prob.npy",
     output:
-        multiext(str(res / "masked" / k_seed / "sub{subsplit}_posterior"), 
+        multiext(str(res / "masked" / k_seed / "posterior"), 
                     ".npy", ".missingness", ".names", ".labels")
     params:
         outbase = lambda wc, output: output[0][:-4]
@@ -312,10 +341,10 @@ rule mask_posterior:
 
 rule mask_decoding:
     input:
-        l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
-        masker = res / "fatass" / k_seed / "sub{subsplit}.path",
+        l = res / "haplonet_split" / f"allchrom.sub{SUBSPLIT_MAX}.loglike.npy", 
+        masker = res / "fatass" / k_seed / "cool.path",
     output:
-        multiext(str(res / "masked" / k_seed / "sub{subsplit}_decoding"), 
+        multiext(str(res / "masked" / k_seed / "decoding"), 
                     ".npy", ".missingness", ".names", ".labels")
     params:
         outbase = lambda wc, output: output[0][:-4]
@@ -326,23 +355,100 @@ rule mask_decoding:
 
 rule pca:
     input:
-        masker = res / "masked" / k_seed / "sub{subsplit}_{masktype}.npy",
+        masker = res / "masked" / k_seed / "{masktype}.npy",
     output:
-        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
-        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvals",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}.eigenvecs",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}.eigenvals",
+    log:
+        res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}.log",
     params:
         outbase = lambda wc, output: output[0][:-10]
-    threads: 40
+    threads: 28
     shell: """
     {HAPLONET} pca -l {input} -t {threads} --iterative {PC_ITERATIVE} \
-        -o {params.outbase} --filter {wildcards.maf_filter}
+        -o {params.outbase} --iterations 1000 --filter {wildcards.maf_filter} > {log}
     """
 
 rule plot:
     input:
-        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
-        res / "masked" / k_seed / "sub{subsplit}_{masktype}.labels",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}.eigenvecs",
+        res / "masked" / k_seed / "{masktype}.labels",
     output:
-        res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}_{pc1}_{pc2}.png",
+        res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}_{pc1}_{pc2}.png",
     shell:
         "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"
+
+# rule fatass:
+#     input:
+#         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+#         f = res / "admix" / k_seed / "sub{subsplit}.f.npy",
+#         q = res / "admix" / k_seed / "sub{subsplit}.q",
+#         w = res / "basepos" / "allchrom.sub{subsplit}.positions.txt",
+#     output:
+#         res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+#         res / "fatass" / k_seed / "sub{subsplit}.path",
+#         res / "fatass" / k_seed / "sub{subsplit}.alpha",
+#         res / "fatass" / k_seed / "sub{subsplit}.windows",
+#     params:
+#         out = lambda wc, output: output[0][:-9],
+#         alpha = set_alpha()
+#     threads: 10
+#     shell:
+#         "{HAPLONET} fatash {params.alpha} "
+#         "-w <( cut -f 2 {input.w} ) "
+#         "--window_save "
+#         "--like {input.l} "
+#         "--prop {input.q} --freq {input.f} "
+#         "--out {params.out} "
+#         "--threads {threads}"
+
+# rule mask_posterior:
+#     input:
+#         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+#         masker = res / "fatass" / k_seed / "sub{subsplit}.prob.npy",
+#     output:
+#         multiext(str(res / "masked" / k_seed / "sub{subsplit}_posterior"), 
+#                     ".npy", ".missingness", ".names", ".labels")
+#     params:
+#         outbase = lambda wc, output: output[0][:-4]
+#     shell:
+#         "{P} {MASK_ANCESTRY} --posterior {input.masker} "
+#         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+#         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
+
+# rule mask_decoding:
+#     input:
+#         l = res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
+#         masker = res / "fatass" / k_seed / "sub{subsplit}.path",
+#     output:
+#         multiext(str(res / "masked" / k_seed / "sub{subsplit}_decoding"), 
+#                     ".npy", ".missingness", ".names", ".labels")
+#     params:
+#         outbase = lambda wc, output: output[0][:-4]
+#     shell:
+#         "{P} {MASK_ANCESTRY} --decoding {input.masker} "
+#         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
+#         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
+
+# rule pca:
+#     input:
+#         masker = res / "masked" / k_seed / "sub{subsplit}_{masktype}.npy",
+#     output:
+#         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+#         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvals",
+#     params:
+#         outbase = lambda wc, output: output[0][:-10]
+#     threads: 40
+#     shell: """
+#     {HAPLONET} pca -l {input} -t {threads} --iterative {PC_ITERATIVE} \
+#         -o {params.outbase} --filter {wildcards.maf_filter}
+#     """
+
+# rule plot:
+#     input:
+#         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}.eigenvecs",
+#         res / "masked" / k_seed / "sub{subsplit}_{masktype}.labels",
+#     output:
+#         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}_{pc1}_{pc2}.png",
+#     shell:
+#         "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"
