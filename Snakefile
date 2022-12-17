@@ -80,6 +80,12 @@ rule pca_posterior:
             pc_comb = pcs_comb
             ),
         res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.hist.png",
+
+rule all_admixture:
+    input:
+        expand(res / "admix" / k_seed / "sub{subsplit}.q", subsplit=SUBSPLIT_LST),
+        expand(res / "admix" / k_seed / "sub{subsplit}.q.png", subsplit=SUBSPLIT_LST),
+
 # rule pca_posterior:
 #     input:
 #         expand(res / "pca" / k_seed / "MAF{maf_filter}" / 
@@ -274,6 +280,14 @@ rule admix:
         "--K {K} --seed {SEED} --out {params.out} "
         "--threads {threads}"
 
+rule plot_admix:
+    input:
+        res / "admix" / k_seed / "sub{subsplit}.q"
+    output:
+        res / "admix" / k_seed / "sub{subsplit}.q.png"
+    shell:
+        "Rscript scripts/plot_admixture.R {POP_LABELS} {input} {output}"
+
 rule get_cool_windows:
     input:
         l = expand(res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy", 
@@ -373,6 +387,7 @@ rule plot:
     input:
         res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}.eigenvecs",
         res / "masked" / k_seed / "{masktype}.labels",
+        res / "masked" / k_seed / "{masktype}.names",
     output:
         res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}_{pc1}_{pc2}.png",
     shell:
