@@ -30,7 +30,7 @@ POP_LABELS = config["labels"]
 
 res = Path(config["output"])
 
-pcs = ["PC1", "PC2", "PC3"]
+pcs = ["PC1", "PC2", "PC3", "PC4", "PC5"]
 pcs_comb = list(it.combinations(pcs, 2))
 t_wc = ["prob.npy", "path"]
 k_seed = f"K{K}_s{SEED}"
@@ -272,13 +272,15 @@ rule admix:
     output:
         res / "admix" / k_seed / "sub{subsplit}.f.npy",
         res / "admix" / k_seed / "sub{subsplit}.q"
+    log:
+        res / "admix" / k_seed / "sub{subsplit}.log",
     params:
         out = lambda wc, output: output[0][:-6]
     threads: 20
     shell:
         "{HAPLONET} admix --like {input} "
         "--K {K} --seed {SEED} --out {params.out} "
-        "--threads {threads}"
+        "--threads {threads} > {log}"
 
 rule plot_admix:
     input:
@@ -332,7 +334,7 @@ rule fatass:
     threads: 10
     shell:
         "{HAPLONET} fatash {params.alpha} "
-        "-w <( cut -f 2 {input.w} ) "
+        "-w {input.w} "
         "--window_save "
         "--like {input.l} "
         "--prop {input.q} --freq {input.f} "

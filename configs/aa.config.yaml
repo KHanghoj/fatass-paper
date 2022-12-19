@@ -5,7 +5,7 @@ mask_anc: "/emc/kristian/top_secret2/fatass-paper/scripts/mask_ancV3.py"
 plotter: "/emc/kristian/top_secret2/fatass-paper/scripts/plot.R"
 # haplonet: "/home/jonas/miniconda3/bin/haplonet"
 haplonet: "/home/krishang/mambaforge/envs/haplonet/bin/haplonet"
-seed: 1
+seed: 2
 winsize_sub0: 1024
 # alpha: 0.0001 # alpha parameter for fatass. float or 'est'
 loglike_diff: 50
@@ -19,7 +19,7 @@ filter:
   # - 0.05   # minimum frequency filter for PCA (similar to MAF)
   # - 0.01
   - 0.001
-iterative: 4 # 5   # number of eigenvectors used for structure in pca
+iterative: 4 # 4   # number of eigenvectors used for structure in pca
 max_missingness: 0.90
 het_hom: "het" # 'het' will mask per haplotype. 'hom' mask per diploid
 chromlist: "/emc/kristian/top_secret2/fatass-paper/configs/chromlist.txt" #one chromosome per line. same order as loglike file from haplonet
