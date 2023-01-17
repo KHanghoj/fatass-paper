@@ -25,17 +25,17 @@ df_unadm <- subset(plotdf, Admixed == "Unadmixed")
 df_adm <- subset(plotdf, Admixed == "Admixed")
 
 # bitmap(out, res=500, width=7, height=5)
-p<-ggplot() + 
-  scale_size_manual(values = c("Unadmixed" = .5, "Admixed" = 1)) +
+p <- ggplot() +
+  scale_size_manual(values = c("Unadmixed" = .75, "Admixed" = 1.25)) +
   scale_color_brewer(palette = "Paired") +
   # scale_alpha_manual(values = c("Unadmixed" = .2, "Admixed" = .5)) +
   guides(col = guide_legend(ncol = 2, byrow = TRUE),
          shape = guide_legend(ncol = 2, byrow = TRUE)) +
-  geom_point(data = df_adm, aes(.data[[pc1]], .data[[pc2]], 
-                      col = p, shape = k, 
+  geom_point(data = df_adm, aes(.data[[pc1]], .data[[pc2]],
+                      col = p, shape = k,
                       size = Admixed)) +
-  geom_point(data = df_unadm, aes(.data[[pc1]], .data[[pc2]], 
-                      col = p, shape = k, 
+  geom_point(data = df_unadm, aes(.data[[pc1]], .data[[pc2]],
+                      col = p, shape = k,
                       size = Admixed)) +
   theme_bw()
 # # bitmap(out, res=500, width=7, height=5)
@@ -51,4 +51,4 @@ p<-ggplot() +
 #   geom_point() +
 #   theme_bw()
 # dev.off()
-ggsave(out, p, width=7, height=5, dpi=300)
+ggsave(out, p, width = 8, height = 5, dpi = 350)

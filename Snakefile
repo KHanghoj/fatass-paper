@@ -7,11 +7,12 @@ def add_ext(p, *args):
     return Path(base)
     # return Path(str(p)+str(e))
 # bcftools view -S na.samples -q 0.05 -Q 0.95 -m 2 -M 2 -v snps -Oz -o vcf/na.chr5.vcf.gz --threads 4 /emc/kristian/1kg_20220422/1kGP_high_coverage_Illumina.chr5.filtered.SNV_INDEL_SV_phased_panel.vcf.gza
+SCRIPT_DIR = os.path.join(workflow.basedir, "scripts")
 P = config["python"]
 VCF = config["vcf"]
 HAPLONET = config["haplonet"]
-MASK_ANCESTRY = config["mask_anc"]
-PLOTTER = config["plotter"]
+# MASK_ANCESTRY = config["mask_anc"]
+# PLOTTER = config["plotter"]
 BCFTOOLS = config["bcftools"]
 MAF_FILTER = config["filter"]
 WINSIZE_SUB0 = config["winsize_sub0"]
@@ -264,7 +265,7 @@ rule concat:
     log:
         res / "haplonet_split" / "allchrom.sub{subsplit}.loglike.npy.log" 
     shell:
-         "{P} ./scripts/concat_npyV2.py {output} {input} > {log}"
+         "{P} {SCRIPT_DIR}/concat_npyV2.py {output} {input} > {log}"
         
 rule admix:
     input:
@@ -288,7 +289,7 @@ rule plot_admix:
     output:
         res / "admix" / k_seed / "sub{subsplit}.q.png"
     shell:
-        "Rscript scripts/plot_admixture.R {POP_LABELS} {input} {output}"
+        "Rscript {SCRIPT_DIR}/plot_admixture.R {POP_LABELS} {input} {output}"
 
 rule get_cool_windows:
     input:
@@ -300,7 +301,7 @@ rule get_cool_windows:
         c = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts",
         b = res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.bool",
     shell:
-        "{P} ./scripts/prep_windows_fatassV2.py -w {input.w} -L {input.l} -o {output.w} --loglike_diff {LOGLIKE_DIFF}" 
+        "{P} {SCRIPT_DIR}/prep_windows_fatassV2.py -w {input.w} -L {input.l} -o {output.w} --loglike_diff {LOGLIKE_DIFF}" 
 
 rule plot_win_dist:
     input:
@@ -309,7 +310,7 @@ rule plot_win_dist:
         res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.hist.png",
         res / "basepos" / f"allchrom.sub{SUBSPLIT_MAX}.cool.positions.txt.counts.perpop.png",
     shell:
-        "Rscript ./scripts/plot_windowsubsplit.R {input} {POP_LABELS} {output}"
+        "Rscript {SCRIPT_DIR}/plot_windowsubsplit.R {input} {POP_LABELS} {output}"
 
 def set_alpha():
     if str(ALPHA).lower() == "est":
@@ -351,7 +352,7 @@ rule mask_posterior:
     params:
         outbase = lambda wc, output: output[0][:-4]
     shell:
-        "{P} {MASK_ANCESTRY} --posterior {input.masker} "
+        "{P} {SCRIPT_DIR}/mask_ancV3.py --posterior {input.masker} "
         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
 
@@ -365,7 +366,7 @@ rule mask_decoding:
     params:
         outbase = lambda wc, output: output[0][:-4]
     shell:
-        "{P} {MASK_ANCESTRY} --decoding {input.masker} "
+        "{P} {SCRIPT_DIR}/mask_ancV3.py --decoding {input.masker} "
         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
 
@@ -393,7 +394,7 @@ rule plot:
     output:
         res / "pca" / k_seed / "MAF{maf_filter}" / "{masktype}_{pc1}_{pc2}.png",
     shell:
-        "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"
+        "Rscript {SCRIPT_DIR}/plot.R {input} {wildcards.pc1} {wildcards.pc2} {output}"
 
 # rule fatass:
 #     input:
@@ -429,7 +430,7 @@ rule plot:
 #     params:
 #         outbase = lambda wc, output: output[0][:-4]
 #     shell:
-#         "{P} {MASK_ANCESTRY} --posterior {input.masker} "
+#         "{P} {SCRIPT_DIR}/mask_ancV3.py --posterior {input.masker} "
 #         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
 #         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
 
@@ -443,7 +444,7 @@ rule plot:
 #     params:
 #         outbase = lambda wc, output: output[0][:-4]
 #     shell:
-#         "{P} {MASK_ANCESTRY} --decoding {input.masker} "
+#         "{P} {SCRIPT_DIR}/mask_ancV3.py --decoding {input.masker} "
 #         "--loglike {input.l} --labels {POP_LABELS}  --names {SAMPLES} "
 #         "--out {params.outbase} --max_missing {MAX_MISSINGNESS} {HET_HOM}"
 
@@ -468,4 +469,4 @@ rule plot:
 #     output:
 #         res / "pca" / k_seed / "MAF{maf_filter}" / "sub{subsplit}_{masktype}_{pc1}_{pc2}.png",
 #     shell:
-#         "Rscript {PLOTTER} {input} {wildcards.pc1} {wildcards.pc2} {output}"
+#         "Rscript {SCRIPT_DIR}/plot.R {input} {wildcards.pc1} {wildcards.pc2} {output}"
